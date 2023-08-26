@@ -4,7 +4,7 @@
 #' @importFrom MCMCpack 'rdirichlet'
 #' @importFrom truncnorm 'rtruncnorm'
 
-motr_bart = function(x,
+motr_bart = function(x, x_target,
                      y,
                      sparse = TRUE,
                      vars_inter_slope = TRUE,
@@ -21,6 +21,8 @@ motr_bart = function(x,
                      ancestors = FALSE) {
 
   x = as.data.frame(x)
+  x_source = as.data.frame(x)
+  x_target = as.data.frame(x_target)
   # Quantities needed for prediction
   center = apply(x, 2, mean)
   scale = apply(x, 2, sd)
@@ -46,6 +48,8 @@ motr_bart = function(x,
   y_hat_store = matrix(NA, ncol = length(y), nrow = store_size)
   var_count = rep(0, ncol(X_orig))
   var_count_store = matrix(0, ncol = ncol(X_orig), nrow = store_size)
+  W = rep(0, ncol(X_orig))
+  W_store = matrix(0, ncol = ncol(X_orig), nrow = store_size)
   s_prob_store = matrix(0, ncol = ncol(X_orig), nrow = store_size)
   vars_betas_store = matrix(0, ncol = 2, nrow = store_size)
   tree_fits_store = matrix(0, ncol = ntrees, nrow = length(y))
@@ -90,6 +94,7 @@ motr_bart = function(x,
       sigma2_store[curr] = sigma2
       y_hat_store[curr,] = predictions
       var_count_store[curr,] = var_count
+      W_store[curr,] = W
       s_prob_store[curr,] = s
       vars_betas_store[curr,] = V
     }
@@ -113,6 +118,7 @@ motr_bart = function(x,
       # CURRENT TREE: compute the log of the marginalised likelihood + log of the tree prior
       l_old = tree_full_conditional(curr_trees[[j]],
                             X,
+                            x_source, x_target,
                             current_partial_residuals,
                             sigma2,
                             V,
@@ -126,6 +132,7 @@ motr_bart = function(x,
       # NEW TREE: compute the log of the marginalised likelihood + log of the tree prior
       l_new = tree_full_conditional(new_trees[[j]],
                                     X,
+                                    x_source, x_target,
                                     current_partial_residuals,
                                     sigma2,
                                     V,
@@ -165,6 +172,7 @@ motr_bart = function(x,
       # Update mu whether tree accepted or not
       curr_trees[[j]] = simulate_beta(curr_trees[[j]],
                                     X,
+                                    x_source, x_target,
                                     current_partial_residuals,
                                     sigma2,
                                     inv_V,

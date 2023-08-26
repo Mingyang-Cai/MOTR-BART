@@ -12,7 +12,7 @@
 # 6. get_number_distinct_cov: counts the number of distinct covariates that are used in a tree to create the splitting rules
 # Compute the full conditionals -------------------------------------------------
 
-tree_full_conditional = function(tree, X, R, sigma2, V, inv_V, nu, lambda, tau_b, ancestors) {
+tree_full_conditional = function(tree, X, R, x_source, x_target, sigma2, V, inv_V, nu, lambda, tau_b, ancestors) {
 
   # Select the lines that correspond to terminal and internal nodes
   which_terminal = which(tree$tree_matrix[,'terminal'] == 1)
@@ -41,14 +41,22 @@ tree_full_conditional = function(tree, X, R, sigma2, V, inv_V, nu, lambda, tau_b
     # invV = diag(p)*inv_V
     X_node = X[curr_X_node_indices == unique_node_indices[i], lm_vars]
     r_node = R[curr_X_node_indices == unique_node_indices[i]]
-    Lambda_node_inv = t(X_node)%*%X_node + invV
+    x_source_node = x_source[curr_X_node_indices == unique_node_indices[i], lm_vars]
+    x_target_node = x_target[curr_X_node_indices == unique_node_indices[i], lm_vars]
+    W_data = rbind(x_source, x_target)
+    W_data$domain = c(rep(1, nrow(x_source)), rep(0, x_target))
+    W_data = W_data[, c(lm_vars, domain)]
+    W_model = glm(domain ~., family = binomial, data = W_data) 
+    prob = predict(W_model, newdata = x_source_node, type = "response")
+    W = (1-prob)/prob
+    Lambda_node_inv = W%*%t(X_node)%*%X_node + invV
     # Lambda_node = solve(t(X_node)%*%X_node + invV)
     # mu_node = Lambda_node%*%((t(X_node))%*%r_node)
-    mu_node = solve(Lambda_node_inv, t(X_node)%*%r_node)
+    mu_node = solve(Lambda_node_inv, W%*%t(X_node)%*%r_node)
 
     log_post[i] = -0.5 * log(det(V_)) +
       0.5*log(1/det(Lambda_node_inv)) -
-      (1/(2*sigma2)) * (- t(mu_node)%*%Lambda_node_inv%*%mu_node)
+      (1/(2*sigma2)) * (W%*%t(r_node)%*%r_node - t(mu_node)%*%Lambda_node_inv%*%mu_node)
 
   }
   return(sum(log_post))
@@ -57,7 +65,7 @@ tree_full_conditional = function(tree, X, R, sigma2, V, inv_V, nu, lambda, tau_b
 
 # Simulate_par -------------------------------------------------------------
 
-simulate_beta = function(tree, X, R, sigma2, inv_V, tau_b, nu, ancestors) {
+simulate_beta = function(tree, X, R, x_source, x_target, sigma2, inv_V, tau_b, nu, ancestors) {
 
   # First find which rows are terminal and internal nodes
   which_terminal = which(tree$tree_matrix[,'terminal'] == 1)
@@ -85,11 +93,17 @@ simulate_beta = function(tree, X, R, sigma2, inv_V, tau_b, nu, ancestors) {
     # invV = diag(p)*inv_V
     X_node = X[curr_X_node_indices == unique_node_indices[i], lm_vars] # Only variables that have been used as split
     r_node = R[curr_X_node_indices == unique_node_indices[i]]
-    Lambda_node = solve(t(X_node)%*%X_node + invV)
+    W_data = rbind(x_source, x_target)
+    W_data$domain = c(rep(1, nrow(x_source)), rep(0, x_target))
+    W_data = W_data[, c(lm_vars, domain)]
+    W_model = glm(domain ~., family = binomial, data = W_data) 
+    prob = predict(W_model, newdata = x_source_node, type = "response")
+    W = (1-prob)/prob
+    Lambda_node = solve(W%*%t(X_node)%*%X_node + invV)
 
     # Generate betas  -------------------------------------------------
     beta_hat = rmvnorm(1,
-                 mean = Lambda_node%*%(t(X_node)%*%r_node),
+                 mean = Lambda_node%*%(W%*%t(X_node)%*%r_node),
                  sigma = sigma2*Lambda_node)
 
     # Put in just the ones that are useful
